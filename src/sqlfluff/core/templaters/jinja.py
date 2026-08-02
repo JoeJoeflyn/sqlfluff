@@ -397,6 +397,29 @@ class JinjaTemplater(PythonTemplater):
                 line_pos=pos,
             )
 
+    def _get_jinja_env_kwargs(self, config: Optional[FluffConfig]) -> dict[str, str]:
+        """Read optional Jinja delimiter overrides from config.
+
+        Returns a dict of kwargs to splat into SandboxedEnvironment.
+        All keys are optional; absent keys fall back to Jinja defaults
+        (``{{ }}`` for variables, ``{% %}`` for blocks).
+        """
+        kwargs: dict[str, str] = {}
+        if not config:
+            return kwargs
+        for key in (
+            "variable_start_string",
+            "variable_end_string",
+            "block_start_string",
+            "block_end_string",
+            "comment_start_string",
+            "comment_end_string",
+        ):
+            val = config.get_section((self.templater_selector, self.name, key))
+            if val is not None:
+                kwargs[key] = val
+        return kwargs
+
     def _get_jinja_env(self, config: Optional[FluffConfig] = None) -> Environment:
         """Get a properly configured jinja environment.
 
@@ -457,6 +480,7 @@ class JinjaTemplater(PythonTemplater):
             autoescape=False,
             extensions=extensions,
             loader=loader,
+            **self._get_jinja_env_kwargs(config),
         )
 
     def _get_macros_path(
@@ -769,6 +793,7 @@ class JinjaTemplater(PythonTemplater):
         if (
             in_str
             and not re.search(r"\{[{%#]", in_str)
+            and not self._get_jinja_env_kwargs(config)
             and not self._get_macros_path(config, "load_macros_from_path")
             and not config.get_section((self.templater_selector, self.name, "macros"))
             and not config.get("library_path")
@@ -872,7 +897,7 @@ class JinjaTemplater(PythonTemplater):
 
         templater_logger.info("Slicing File Template")
         templater_logger.debug("    Raw String: %r", raw_str[:80])
-        analyzer = self._get_jinja_analyzer(raw_str, self._get_jinja_env())
+        analyzer = self._get_jinja_analyzer(raw_str, self._get_jinja_env(config))
         tracer = analyzer.analyze(render_func)
         trace = tracer.trace(append_to_templated=append_to_templated)
         return trace.raw_sliced, trace.sliced_file, trace.templated_str

@@ -2084,3 +2084,45 @@ def test__templater_jinja_dotted_context_config():
 
     # The template should render with the nested values
     assert str(outstr) == "SELECT * FROM `myproject.prod_test.table`"
+
+
+def test__templater_jinja_custom_variable_delimiters():
+    """Test custom variable delimiters (e.g. Snowflake CLI <% var %>).
+
+    See issue #7598: Snowflake CLI uses <% varname %> instead of {{ varname }}.
+    """
+    config = FluffConfig.from_string(
+        "[sqlfluff]\n"
+        "dialect = snowflake\n"
+        "templater = jinja\n"
+        "[sqlfluff:templater:jinja]\n"
+        "variable_start_string = <%\n"
+        "variable_end_string = %>\n"
+    )
+    t = JinjaTemplater(override_context=dict(table_name="my_table", identifier="42"))
+    instr = "SELECT * FROM <% table_name %> WHERE id = <% identifier %>\n"
+    outstr, vs = t.process(in_str=instr, fname="test.sql", config=config)
+    assert str(outstr) == "SELECT * FROM my_table WHERE id = 42\n"
+    assert len(vs) == 0
+
+
+def test__templater_jinja_custom_block_delimiters():
+    """Test custom block delimiters for control flow.
+
+    See issue #7598: users may want to override {% %} delimiters too.
+    """
+    config = FluffConfig.from_string(
+        "[sqlfluff]\n"
+        "dialect = ansi\n"
+        "templater = jinja\n"
+        "[sqlfluff:templater:jinja]\n"
+        "block_start_string = <%\n"
+        "block_end_string = %>\n"
+        "variable_start_string = <<\n"
+        "variable_end_string = >>\n"
+    )
+    t = JinjaTemplater(override_context=dict(cols=["a", "b", "c"]))
+    instr = "<% for c in cols %> << c >><% if not loop.last %>, <% endif %><% endfor %>"
+    outstr, vs = t.process(in_str=instr, fname="test.sql", config=config)
+    assert str(outstr) == " a,  b,  c"
+    assert len(vs) == 0
